@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>電腦科互動教室：RAM 與儲存空間模擬器</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            user-select: none;
+        }
+
+        /* Phone Screen Frame Styling */
+        .phone-mockup {
+            width: 100%;
+            max-width: 380px;
+            height: 720px;
+            border-radius: 44px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 12px #334155;
+            background: #ffffff;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Screen Shake animation for "Lag" simulation */
+        .shake-effect {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-3px, 1px, 0); }
+            20%, 80% { transform: translate3d(5px, -2px, 0); }
+            30%, 50%, 70% { transform: translate3d(-7px, 3px, 0); }
+            40%, 60% { transform: translate3d(7px, -3px, 0); }
+        }
+
+        /* Custom Scrollbars inside phone */
+        .phone-content::-webkit-scrollbar {
+            width: 4px;
+        }
+        .phone-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .phone-content::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+
+        /* Meter transitions */
+        .ram-bar-fill, .storage-bar-fill {
+            transition: width 0.4s ease-out, background-color 0.3s ease;
+        }
+
+        /* App Freeze Pulse Animation */
+        .freeze-pulse {
+            animation: freezePulse 1s infinite alternate;
+        }
+
+        @keyframes freezePulse {
+            0% { opacity: 0.8; filter: grayscale(30%); }
+            100% { opacity: 1; filter: grayscale(0%); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-between p-2 md:p-6">
+
+    <header class="w-full max-w-5xl text-center mb-3">
+        <div class="inline-block bg-blue-600 text-white text-xs md:text-sm font-semibold px-3 py-1 rounded-full mb-1 shadow">
+            中三電腦科 互動模擬實驗室
+        </div>
+        <h1 class="text-2xl md:text-3xl font-bold text-white tracking-wide">主記憶體（RAM）與儲存空間的分別</h1>
+        
+        <!-- Interactive Instruction Box -->
+        <div id="instruction-box" class="mt-3 bg-slate-800 p-3.5 md:p-4 rounded-2xl shadow-xl border-l-4 border-blue-500 text-left max-w-3xl mx-auto flex items-start space-x-3">
+            <div class="text-blue-400 text-xl mt-0.5"><i class="fa-solid fa-circle-info"></i></div>
+            <div>
+                <span class="font-bold text-blue-200 block text-sm md:text-base" id="instruction-title">關卡一任務：體驗 RAM 滿載時的 App 卡頓（Lag）與自動關閉</span>
+                <p class="text-xs md:text-sm text-slate-300 mt-0.5 leading-relaxed" id="instruction-desc">
+                    請點擊手機上的 App 開啟畫面。切換「手機 A (2GB RAM)」與「手機 B (8GB RAM)」，請注意：<strong>即使是 8GB RAM 的手機 B，開啟足夠多 App 後同樣會開始卡頓！</strong>觀察兩部手機分別開啟到第幾個 App 時出現「無回應卡頓」，並填寫右方紀錄欄。
+                </p>
+            </div>
+        </div>
+    </header>
+
+    <main class="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-start my-auto">
+        
+        <!-- LEFT COLUMN: Phone Simulator -->
+        <div class="lg:col-span-6 flex flex-col items-center justify-center">
+            
+            <!-- Phone Model Selector -->
+            <div class="flex space-x-3 mb-3 w-full max-w-[380px]">
+                <button id="btn-phone-a" onclick="switchPhone('A')" class="flex-1 py-2 px-3 rounded-2xl border-2 border-blue-500 bg-blue-600 text-white font-bold text-xs md:text-sm shadow-lg transition-all flex flex-col items-center">
+                    <span>手機 A</span>
+                    <span class="text-[11px] font-normal opacity-90">2GB RAM + 32GB 儲存</span>
+                </button>
+                <button id="btn-phone-b" onclick="switchPhone('B')" class="flex-1 py-2 px-3 rounded-2xl border-2 border-slate-700 bg-slate-800 text-slate-300 font-bold text-xs md:text-sm shadow hover:bg-slate-700 transition-all flex flex-col items-center">
+                    <span>手機 B</span>
+                    <span class="text-[11px] font-normal text-slate-400">8GB RAM + 128GB 儲存</span>
+                </button>
+            </div>
+
+            <div id="phone-frame" class="phone-mockup relative">
+                
+                <!-- Phone Top Hardware Status Bar -->
+                <div class="bg-slate-900 text-white px-5 pt-3 pb-3 rounded-t-[32px] border-b border-slate-800 z-30">
+                    <div class="space-y-2">
+                        <!-- RAM Meter (Blue) -->
+                        <div>
+                            <div class="flex justify-between items-center text-[11px] mb-1">
+                                <span class="font-semibold text-blue-400 flex items-center gap-1">
+                                    <i class="fa-solid fa-memory"></i> RAM 使用量 (主記憶體)
+                                </span>
+                                <span id="ram-text" class="font-mono text-blue-300">0.0 / 2.0 GB (0%)</span>
+                            </div>
+                            <div class="w-full bg-slate-800 rounded-full h-2.5 p-0.5 overflow-hidden">
+                                <div id="ram-bar" class="ram-bar-fill bg-blue-500 h-full rounded-full" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Storage Meter (Orange) - Level 2 -->
+                        <div id="storage-container" class="hidden border-t border-slate-800 pt-1.5">
+                            <div class="flex justify-between items-center text-[11px] mb-1">
+                                <span class="font-semibold text-orange-400 flex items-center gap-1">
+                                    <i class="fa-solid fa-hard-drive"></i> 儲存空間使用量
+                                </span>
+                                <span id="storage-text" class="font-mono text-orange-300">12.0 / 32.0 GB (37%)</span>
+                            </div>
+                            <div class="w-full bg-slate-800 rounded-full h-2.5 p-0.5 overflow-hidden">
+                                <div id="storage-bar" class="storage-bar-fill bg-orange-500 h-full rounded-full" style="width: 37.5%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1 bg-slate-900 relative overflow-hidden flex flex-col justify-between text-slate-800">
+                    
+                    <!-- Notification Toast Overlay Inside Phone -->
+                    <div id="phone-toast" class="hidden absolute top-2 left-3 right-3 bg-slate-950/95 text-white p-2.5 rounded-xl text-xs z-50 shadow-2xl flex items-start gap-2 border border-slate-700">
+                        <i class="fa-solid fa-bell text-amber-400 text-sm mt-0.5"></i>
+                        <span id="toast-message" class="flex-1">Notification text</span>
+                    </div>
+
+                    <!-- App Not Responding (ANR) System Dialog Overlay -->
+                    <div id="anr-dialog" class="hidden absolute inset-0 bg-slate-950/70 z-50 flex items-center justify-center p-5 backdrop-blur-sm">
+                        <div class="bg-white rounded-2xl p-4 shadow-2xl border border-red-200 text-center space-y-3 max-w-[280px]">
+                            <div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto text-2xl">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                            </div>
+                            <div>
+                                <h4 id="anr-app-name" class="font-bold text-slate-900 text-sm">程式無回應 (Lag)</h4>
+                                <p class="text-[11px] text-slate-500 mt-1">隨機存取記憶體 (RAM) 已接近極限！系統正在強制關閉最舊的背景程式以釋放空間...</p>
+                            </div>
+                            <button onclick="dismissANRDialog()" class="w-full py-2 bg-red-600 text-white rounded-xl font-bold text-xs shadow">
+                                釋放 RAM 記憶體
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- App Reloading Overlay (Simulating loading from Storage to RAM) -->
+                    <div id="reload-overlay" class="hidden absolute inset-0 bg-slate-900 text-white z-50 flex flex-col items-center justify-center p-6 text-center">
+                        <i id="reload-app-icon" class="fa-solid fa-mobile text-5xl text-blue-400 mb-4 animate-bounce"></i>
+                        <h4 id="reload-app-name" class="font-bold text-lg mb-1">社交媒體</h4>
+                        <p class="text-xs text-slate-400 mb-5">此 App 已在背景關閉，正在從「儲存空間」重新載入中⋯⋯</p>
+                        <div class="w-48 bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-700">
+                            <div id="reload-progress" class="bg-blue-500 h-full w-0 transition-all duration-1500 ease-out rounded-full"></div>
+                        </div>
+                    </div>
+
+                    <!-- VIEW 1: Phone Home Screen App Grid -->
+                    <div id="home-screen-view" class="p-4 flex-1 flex flex-col justify-between phone-content overflow-y-auto">
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400 mb-2 px-1 flex justify-between">
+                                <span>桌面程式（點擊開啟）：</span>
+                                <span id="active-count-badge" class="text-blue-400 font-bold">運行中: 0</span>
+                            </div>
+                            <div id="apps-grid" class="grid grid-cols-4 gap-3">
+                                <!-- Dynamic Apps Injected by JS -->
+                            </div>
+                        </div>
+
+                        <!-- Level 2 Storage Operations Panel -->
+                        <div id="level2-controls" class="hidden border-t border-slate-800 pt-3 mt-2 space-y-2">
+                            <div class="text-[11px] font-semibold text-slate-400">儲存空間操作：</div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="takePhoto()" class="py-2 px-2 bg-orange-600 hover:bg-orange-500 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow">
+                                    <i class="fa-solid fa-camera"></i> 影相 (+2GB)
+                                </button>
+                                <button onclick="downloadExtraApp()" class="py-2 px-2 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow">
+                                    <i class="fa-solid fa-download"></i> 下載 App (+4GB)
+                                </button>
+                            </div>
+                            <button onclick="closeAllApps()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 active:scale-98 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow border border-slate-700">
+                                <i class="fa-solid fa-broom text-amber-400"></i> 關閉全部 App（清空 RAM）
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- VIEW 2: Active App Modal Interface inside Phone -->
+                    <div id="active-app-view" class="hidden absolute inset-0 bg-white z-40 flex flex-col justify-between phone-content overflow-hidden">
+                        
+                        <!-- Active App Header Bar -->
+                        <div id="app-window-header" class="bg-slate-100 px-3 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <div id="app-window-icon-box" class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs">
+                                    <i id="app-window-icon" class="fa-solid fa-users"></i>
+                                </div>
+                                <div>
+                                    <h3 id="app-window-title" class="font-bold text-slate-800 text-xs leading-tight">社交媒體</h3>
+                                    <span class="text-[9px] text-slate-500">佔用 RAM: <span id="app-window-ram" class="font-bold text-blue-600">650MB</span></span>
+                                </div>
+                            </div>
+                            <button onclick="minimizeAppWindow()" class="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 rounded-lg text-xs text-slate-700 font-bold flex items-center gap-1">
+                                <i class="fa-solid fa-house"></i> 回主頁
+                            </button>
+                        </div>
+
+                        <!-- Active App Dynamic Interactive Content Window -->
+                        <div id="app-window-body" class="flex-1 overflow-y-auto p-3 relative bg-slate-50">
+                            <!-- App specific dynamic HTML injected by JS -->
+                        </div>
+
+                        <!-- Lag Warning Banner inside App Window -->
+                        <div id="app-lag-banner" class="hidden bg-amber-500 text-white p-2 text-center text-xs font-bold flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-spinner animate-spin"></i>
+                            <span>記憶體高載過熱！畫面出現嚴重卡頓 (Lag)...</span>
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <!-- Phone Bottom Home Indicator Bar -->
+                <div class="bg-slate-900 py-2.5 flex justify-center items-center rounded-b-[32px] border-t border-slate-800">
+                    <button onclick="minimizeAppWindow()" class="w-28 h-1 bg-slate-600 rounded-full hover:bg-slate-400 transition"></button>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Student Worksheet & Controls -->
+        <div class="lg:col-span-6 bg-slate-800 p-5 rounded-3xl shadow-xl border border-slate-700 flex flex-col justify-between min-h-[680px]">
+            <div>
+                <!-- Level Indicator Pills -->
+                <div class="flex items-center space-x-2 mb-4">
+                    <span id="badge-level-1" class="px-3 py-1 bg-blue-500/20 text-blue-300 text-xs font-bold rounded-full border border-blue-500/40">
+                        關卡一：RAM 體驗中
+                    </span>
+                    <span id="badge-level-2" class="px-3 py-1 bg-slate-700 text-slate-500 text-xs font-bold rounded-full border border-slate-600">
+                        <i class="fa-solid fa-lock text-xs mr-1"></i>關卡二：儲存空間
+                    </span>
+                </div>
+
+                <h2 class="text-xl font-bold text-white mb-2 border-b border-slate-700 pb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-blue-400"></i> 課堂觀察紀錄欄
+                </h2>
+
+                <!-- Student Identity Optional Field -->
+                <div class="mb-3 bg-slate-900/40 p-2.5 rounded-xl border border-slate-700 flex items-center space-x-2">
+                    <label class="text-xs font-bold text-slate-300 shrink-0">學生姓名/班別座號：</label>
+                    <input type="text" id="student-id" placeholder="例如：3A (12) 陳大文" class="w-full px-2.5 py-1 text-xs bg-slate-800 text-white border border-slate-600 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+
+                <!-- Level 1 Questions Form -->
+                <div id="form-level-1" class="space-y-4 my-3">
+                    <div class="bg-slate-900/60 p-3.5 rounded-2xl border border-slate-700">
+                        <label class="block text-xs font-bold text-blue-300 mb-1">
+                            ① 手機 A（2GB RAM）：開到第幾個 App 開始頓？
+                        </label>
+                        <input type="text" id="ans-l1-a" placeholder="例如：開到第 3 個開始頓" class="w-full p-2.5 text-sm bg-slate-800 text-white border border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+
+                    <div class="bg-slate-900/60 p-3.5 rounded-2xl border border-slate-700">
+                        <label class="block text-xs font-bold text-blue-300 mb-1">
+                            ② 手機 B（8GB RAM）：開到第幾個 App 開始頓？
+                        </label>
+                        <input type="text" id="ans-l1-b" placeholder="例如：開到第 7 個開始頓" class="w-full p-2.5 text-sm bg-slate-800 text-white border border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Level 2 Questions Form (Hidden initially) -->
+                <div id="form-level-2" class="hidden space-y-4 my-3 border-t border-slate-700 pt-3">
+                    <div class="bg-slate-900/60 p-3.5 rounded-2xl border border-slate-700">
+                        <label class="block text-xs font-bold text-orange-300 mb-1">
+                            ① 關閉全部 App 之後，儲存空間量表有沒有改變？
+                        </label>
+                        <textarea id="ans-l2-a" rows="2" placeholder="請填寫你的觀察結果..." class="w-full p-2.5 text-sm bg-slate-800 text-white border border-slate-600 rounded-xl focus:ring-2 focus:ring-orange-500 focus:outline-none"></textarea>
+                    </div>
+
+                    <div class="bg-slate-900/60 p-3.5 rounded-2xl border border-slate-700">
+                        <label class="block text-xs font-bold text-orange-300 mb-1">
+                            ② 儲存空間滿了，可以怎樣釋放空間？
+                        </label>
+                        <textarea id="ans-l2-b" rows="2" placeholder="請填寫你的釋放空間方法..." class="w-full p-2.5 text-sm bg-slate-800 text-white border border-slate-600 rounded-xl focus:ring-2 focus:ring-orange-500 focus:outline-none"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons Footer -->
+            <div class="mt-6 pt-3 border-t border-slate-700">
+                <button id="btn-complete-l1" onclick="completeLevel1()" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                    <span>完成關卡一</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+
+                <button id="btn-complete-l2" onclick="completeLevel2()" class="hidden w-full py-3 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                    <span>完成關卡二</span>
+                    <i class="fa-solid fa-check-circle"></i>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODAL 1: Level 1 Knowledge Point -->
+    <div id="modal-l1" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center space-x-3 text-blue-400">
+                <div class="p-3 bg-blue-500/20 rounded-2xl"><i class="fa-solid fa-lightbulb text-2xl"></i></div>
+                <h3 class="text-xl font-bold text-white">你發現了什麼？</h3>
+            </div>
+            
+            <div class="text-xs md:text-sm text-slate-300 leading-relaxed space-y-2.5">
+                <p><strong>RAM（隨機存取記憶體）</strong>負責暫時儲存電腦或手機正在使用的程式及數據。</p>
+                <p>RAM容量越大，可以同時開啟的程式就越多，亦越不容易「頓」。</p>
+                <p>手機A（RAM較小）很快便需要關閉背景程式；手機B（RAM較大）可以同時開啟較多程式才開始「頓」。</p>
+                <p>當你重新打開一個已被關閉的程式，需要重新載入，這正是手機「頓」的其中一個原因。</p>
+            </div>
+
+            <button onclick="closeModal1AndUnlockLevel2()" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition shadow-lg">
+                解鎖關卡二：體驗儲存空間
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL 2: Level 2 Knowledge Point -->
+    <div id="modal-l2" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center space-x-3 text-orange-400">
+                <div class="p-3 bg-orange-500/20 rounded-2xl"><i class="fa-solid fa-database text-2xl"></i></div>
+                <h3 class="text-xl font-bold text-white">儲存空間與RAM有何分別？</h3>
+            </div>
+            
+            <div class="text-xs md:text-sm text-slate-300 leading-relaxed space-y-2.5">
+                <p>儲存空間負責長期儲存檔案，例如相片及已安裝的程式。</p>
+                <p>即使關閉所有程式，甚至關機，儲存空間內的內容依然保留；但RAM的內容會即時清空。</p>
+                <p>儲存空間滿了，並不會自動釋放，需要使用者手動刪除檔案或解除安裝程式，才能騰出空間。</p>
+            </div>
+
+            <button onclick="showFinalSummaryModal()" class="w-full py-3 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl transition shadow-lg">
+                查看總結：RAM 與儲存空間比較
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL 3: Final Summary Table & Quiz -->
+    <div id="modal-summary" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto">
+            <div class="text-center">
+                <span class="px-3 py-1 bg-emerald-500/20 text-emerald-300 rounded-full text-xs font-bold border border-emerald-500/30">總結知識點</span>
+                <h3 class="text-2xl font-bold text-white mt-1">總結：RAM與儲存空間比較</h3>
+            </div>
+
+            <!-- Comparison Table -->
+            <div class="overflow-hidden border border-slate-700 rounded-2xl shadow-sm">
+                <table class="w-full text-xs md:text-sm text-left border-collapse">
+                    <thead class="bg-slate-800 text-slate-200 font-bold border-b border-slate-700">
+                        <tr>
+                            <th class="p-3">項目</th>
+                            <th class="p-3 text-blue-400 bg-blue-950/30">RAM</th>
+                            <th class="p-3 text-orange-400 bg-orange-950/30">儲存空間</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700 text-slate-300">
+                        <tr>
+                            <td class="p-3 font-semibold bg-slate-800/50">速度</td>
+                            <td class="p-3 font-medium text-blue-300">快</td>
+                            <td class="p-3">較慢</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 font-semibold bg-slate-800/50">關機後內容</td>
+                            <td class="p-3">消失</td>
+                            <td class="p-3 font-medium text-orange-300">保留</td>
+                        </tr>
+                        <tr>
+                            <td class="p-3 font-semibold bg-slate-800/50">容量（一般）</td>
+                            <td class="p-3">較小</td>
+                            <td class="p-3">較大</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Interactive Quiz Section -->
+            <div class="bg-slate-800/80 p-4 rounded-2xl border border-slate-700 space-y-3">
+                <h4 class="font-bold text-white text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-circle-question text-indigo-400"></i> 課堂思考題：
+                </h4>
+                <p class="text-xs md:text-sm text-slate-300">
+                    「手機規格寫住『8GB ＋ 128GB』，邊個數字代表RAM？」
+                </p>
+                
+                <div id="quiz-answer" class="hidden bg-emerald-950/60 border border-emerald-500/50 text-emerald-300 p-3 rounded-xl text-xs md:text-sm font-bold animate-fade-in">
+                    <i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> 揭曉答案：8GB是RAM，128GB是儲存空間。
+                </div>
+
+                <button id="btn-reveal-quiz" onclick="revealQuizAnswer()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs md:text-sm transition">
+                    揭曉答案
+                </button>
+            </div>
+
+            <button onclick="closeSummaryModal()" class="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition">
+                完成學習，返回模擬器
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL 4: Storage Full Cleanup Dialog -->
+    <div id="modal-storage-full" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div class="flex items-center space-x-3 text-red-400">
+                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                <h3 class="text-lg font-bold text-white">儲存空間不足</h3>
+            </div>
+            
+            <p class="text-xs text-slate-300">
+                儲存空間不足，請先刪除相片或解除安裝程式：
+            </p>
+
+            <div id="storage-items-list" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                <!-- Dynamic Items -->
+            </div>
+
+            <button onclick="closeStorageFullModal()" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-xl text-xs transition">
+                取消
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const TEACHER_API_ENDPOINT = "https://script.google.com/macros/s/AKfycbzdKiWAMoIhTMPzUdhV5q7mndh_Xi_7n6jY29QOZK9EPgvyks2pK29_fZD6kl3ORsC7/exec"; 
+
+        // Base Apps Array (8 Apps with distinct memory footprint)
+        const BASE_APPS = [
+            { id: 'app-social', name: '社交媒體', icon: 'fa-users', color: 'bg-blue-600', ramMB: 600 },
+            { id: 'app-game', name: '3D 賽車遊戲', icon: 'fa-gamepad', color: 'bg-purple-600', ramMB: 1100 },
+            { id: 'app-camera', name: '高清相機', icon: 'fa-camera', color: 'bg-rose-600', ramMB: 800 },
+            { id: 'app-video', name: '影片播放器', icon: 'fa-play', color: 'bg-red-600', ramMB: 950 },
+            { id: 'app-browser', name: '網絡瀏覽器', icon: 'fa-globe', color: 'bg-emerald-600', ramMB: 650 },
+            { id: 'app-music', name: '音樂串流', icon: 'fa-music', color: 'bg-amber-600', ramMB: 500 },
+            { id: 'app-map', name: '衛星地圖', icon: 'fa-map-location-dot', color: 'bg-teal-600', ramMB: 850 },
+            { id: 'app-shopping', name: '網購平台', icon: 'fa-cart-shopping', color: 'bg-indigo-600', ramMB: 700 }
+        ];
+
+        // Global Game State
+        let currentLevel = 1;
+        let currentPhoneModel = 'A'; // 'A' (2GB RAM) or 'B' (8GB RAM)
+        
+        // RAM Specs: Phone A (2048MB), Phone B (8192MB)
+        const phoneSpecs = {
+            'A': { maxRamMB: 2048, totalStorageGB: 32, baseStorageUsedGB: 12 },
+            'B': { maxRamMB: 8192, totalStorageGB: 128, baseStorageUsedGB: 30 }
+        };
+
+        let openAppsOrder = []; // Array of active App IDs in RAM
+        let backgroundKilledApps = new Set(); // App IDs killed by OS
+        let activeWindowAppId = null;
+
+        let currentStorageUsedGB = 12;
+        let extraPhotosCount = 0;
+        let installedDownloadedApps = [];
+
+        // Interactive App internal dummy states
+        let socialLikes = 124;
+
+        // Onload Initialization
+        window.onload = function() {
+            renderAppGrid();
+            updateMetersUI();
+        };
+
+        // Switch Phone Model (Phone A vs Phone B)
+        function switchPhone(model) {
+            currentPhoneModel = model;
+
+            const btnA = document.getElementById('btn-phone-a');
+            const btnB = document.getElementById('btn-phone-b');
+
+            if (model === 'A') {
+                btnA.className = "flex-1 py-2 px-3 rounded-2xl border-2 border-blue-500 bg-blue-600 text-white font-bold text-xs md:text-sm shadow-lg transition-all flex flex-col items-center";
+                btnB.className = "flex-1 py-2 px-3 rounded-2xl border-2 border-slate-700 bg-slate-800 text-slate-300 font-bold text-xs md:text-sm shadow hover:bg-slate-700 transition-all flex flex-col items-center";
+            } else {
+                btnB.className = "flex-1 py-2 px-3 rounded-2xl border-2 border-blue-500 bg-blue-600 text-white font-bold text-xs md:text-sm shadow-lg transition-all flex flex-col items-center";
+                btnA.className = "flex-1 py-2 px-3 rounded-2xl border-2 border-slate-700 bg-slate-800 text-slate-300 font-bold text-xs md:text-sm shadow hover:bg-slate-700 transition-all flex flex-col items-center";
+            }
+
+            // Reset RAM state for new phone
+            minimizeAppWindow();
+            openAppsOrder = [];
+            backgroundKilledApps.clear();
+            currentStorageUsedGB = phoneSpecs[model].baseStorageUsedGB + (extraPhotosCount * 2) + (installedDownloadedApps.length * 4);
+
+            renderAppGrid();
+            updateMetersUI();
+            showToast(`已切換至 手機 ${model}`);
+        }
+
+        // Render Home Screen App Grid
+        function renderAppGrid() {
+            const grid = document.getElementById('apps-grid');
+            grid.innerHTML = '';
+
+            document.getElementById('active-count-badge').textContent = `運行中: ${openAppsOrder.length}`;
+
+            BASE_APPS.forEach(app => {
+                const isOpen = openAppsOrder.includes(app.id);
+                const isKilled = backgroundKilledApps.has(app.id);
+                
+                const appCard = document.createElement('button');
+                appCard.onclick = () => launchApp(app);
+                appCard.className = `flex flex-col items-center p-2 rounded-2xl transition relative group ${
+                    isKilled ? 'opacity-50 grayscale' : 'hover:scale-105 active:scale-95'
+                }`;
+
+                appCard.innerHTML = `
+                    <div class="w-12 h-12 ${app.color} text-white rounded-2xl flex items-center justify-center text-xl shadow-lg mb-1 relative">
+                        <i class="fa-solid ${app.icon}"></i>
+                        ${isOpen ? '<span class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-slate-900 rounded-full"></span>' : ''}
+                        ${isKilled ? '<span class="absolute -bottom-1 -right-1 bg-red-600 text-white text-[9px] px-1 rounded-full font-bold shadow">已關閉</span>' : ''}
+                    </div>
+                    <span class="text-[11px] font-medium text-slate-200 truncate w-full text-center">${app.name}</span>
+                `;
+                grid.appendChild(appCard);
+            });
+        }
+
+        // App Launch Routine
+        function launchApp(app) {
+            // Case 1: App was background killed -> Show Reloading Sequence
+            if (backgroundKilledApps.has(app.id)) {
+                showReloadingSequence(app);
+                return;
+            }
+
+            // Case 2: App is not currently in RAM -> Add it
+            if (!openAppsOrder.includes(app.id)) {
+                openAppsOrder.push(app.id);
+            }
+
+            // Calculate RAM usage
+            const currentRamMB = calculateCurrentRamUsage();
+            const maxRamMB = phoneSpecs[currentPhoneModel].maxRamMB;
+            const ramRatio = currentRamMB / maxRamMB;
+
+            // Check if RAM overflowed limit -> Trigger Lag / ANR & Auto Kill oldest
+            if (currentRamMB >= maxRamMB) {
+                triggerANRAndAutoKill(app);
+                return;
+            }
+
+            renderAppWindowContent(app, ramRatio);
+            updateMetersUI();
+            renderAppGrid();
+        }
+
+        function calculateCurrentRamUsage() {
+            return openAppsOrder.reduce((sum, appId) => {
+                const a = BASE_APPS.find(item => item.id === appId);
+                return sum + (a ? a.ramMB : 0);
+            }, 0);
+        }
+
+        // Render Active App Window View
+        function renderAppWindowContent(app, ramRatio) {
+            activeWindowAppId = app.id;
+
+            document.getElementById('app-window-title').textContent = app.name;
+            document.getElementById('app-window-ram').textContent = `${app.ramMB}MB`;
+            document.getElementById('app-window-icon').className = `fa-solid ${app.icon}`;
+            document.getElementById('app-window-icon-box').className = `w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs ${app.color}`;
+
+            const windowBody = document.getElementById('app-window-body');
+            const lagBanner = document.getElementById('app-lag-banner');
+            const phoneFrame = document.getElementById('phone-frame');
+
+            // Lag Effect trigger when RAM usage > 70% for both Phone A and Phone B
+            const isLagging = ramRatio > 0.70;
+
+            if (isLagging) {
+                lagBanner.classList.remove('hidden');
+                phoneFrame.classList.add('shake-effect');
+                setTimeout(() => phoneFrame.classList.remove('shake-effect'), 500);
+            } else {
+                lagBanner.classList.add('hidden');
+            }
+
+            windowBody.innerHTML = generateAppSpecificHTML(app.id, isLagging);
+
+            document.getElementById('home-screen-view').classList.add('hidden');
+            document.getElementById('active-app-view').classList.remove('hidden');
+        }
+
+        // Generate Interactive App HTML
+        function generateAppSpecificHTML(appId, isLagging) {
+            const lagFreezeStyle = isLagging ? 'freeze-pulse pointer-events-none opacity-60' : '';
+            const lagOverlaySpinner = isLagging ? `
+                <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px] z-20 flex flex-col items-center justify-center text-white p-4 text-center">
+                    <i class="fa-solid fa-spinner animate-spin text-3xl text-amber-400 mb-2"></i>
+                    <p class="font-bold text-xs bg-slate-900/80 px-3 py-1 rounded-full">RAM 記憶體耗盡：畫面嚴重卡頓中...</p>
+                </div>
+            ` : '';
+
+            let contentHTML = '';
+
+            switch (appId) {
+                case 'app-social':
+                    contentHTML = `
+                        <div class="space-y-3 relative">
+                            ${lagOverlaySpinner}
+                            <div class="bg-white p-3 rounded-xl shadow border border-slate-200 ${lagFreezeStyle}">
+                                <div class="flex items-center space-x-2 mb-2">
+                                    <div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">李同學</div>
+                                    <div>
+                                        <div class="font-bold text-xs text-slate-800">電腦科課堂學習</div>
+                                        <div class="text-[9px] text-slate-400">剛才</div>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-slate-700 mb-2">測試中！原來手機 B 開太多 App 也一樣會 Lag！</p>
+                                <button onclick="socialLikeAction()" class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-200 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-thumbs-up"></i> 讚好 (<span id="like-count">${socialLikes}</span>)
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    break;
+
+                case 'app-game':
+                    contentHTML = `
+                        <div class="h-full flex flex-col justify-between items-center text-center p-4 bg-slate-900 text-white rounded-xl relative overflow-hidden ${lagFreezeStyle}">
+                            ${lagOverlaySpinner}
+                            <div class="space-y-1">
+                                <i class="fa-solid fa-flag-checkered text-3xl text-amber-400 animate-pulse"></i>
+                                <h4 class="font-bold text-sm">3D 賽車遊戲</h4>
+                                <p class="text-[10px] text-slate-400">狀態: ${isLagging ? '<span class="text-red-400 font-bold">10 FPS (記憶體嚴重不足卡頓)</span>' : '<span class="text-emerald-400 font-bold">60 FPS (流暢執行)</span>'}</p>
+                            </div>
+                            <div class="w-full my-4 bg-slate-800 h-28 rounded-xl flex items-center justify-center border border-slate-700">
+                                <i class="fa-solid fa-car-side text-5xl text-purple-400 ${isLagging ? 'animate-ping' : 'animate-bounce'}"></i>
+                            </div>
+                            <button class="w-full py-2 bg-purple-600 font-bold text-xs rounded-xl shadow">踩油門加速</button>
+                        </div>
+                    `;
+                    break;
+
+                case 'app-camera':
+                    contentHTML = `
+                        <div class="h-full bg-black text-white rounded-xl flex flex-col justify-between p-3 relative ${lagFreezeStyle}">
+                            ${lagOverlaySpinner}
+                            <div class="flex justify-between items-center text-xs text-slate-400">
+                                <span><i class="fa-solid fa-circle text-red-500 text-[8px] mr-1"></i>4K 高清相機</span>
+                                <span>RAW</span>
+                            </div>
+                            <div class="border-2 border-dashed border-white/40 rounded-xl h-36 flex items-center justify-center">
+                                <i class="fa-solid fa-face-smile text-4xl text-white/50"></i>
+                            </div>
+                            <div class="flex justify-center items-center">
+                                <button onclick="showToast('已拍攝相片')" class="w-12 h-12 rounded-full border-4 border-white bg-red-500 active:scale-90 transition"></button>
+                            </div>
+                        </div>
+                    `;
+                    break;
+
+                default:
+                    contentHTML = `
+                        <div class="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 relative ${lagFreezeStyle}">
+                            ${lagOverlaySpinner}
+                            <i class="fa-solid ${BASE_APPS.find(a => a.id === appId)?.icon || 'fa-cubes'} text-4xl text-blue-500 mb-2"></i>
+                            <h4 class="font-bold text-sm text-slate-800">${BASE_APPS.find(a => a.id === appId)?.name}</h4>
+                            <p class="text-xs mt-1">程式正在運作中，佔用記憶體 ${BASE_APPS.find(a => a.id === appId)?.ramMB}MB</p>
+                        </div>
+                    `;
+                    break;
+            }
+
+            return contentHTML;
+        }
+
+        function socialLikeAction() {
+            socialLikes++;
+            const el = document.getElementById('like-count');
+            if (el) el.textContent = socialLikes;
+            showToast('已讚好貼文！');
+        }
+
+        function minimizeAppWindow() {
+            activeWindowAppId = null;
+            document.getElementById('active-app-view').classList.add('hidden');
+            document.getElementById('home-screen-view').classList.remove('hidden');
+        }
+
+        // Trigger ANR Popup & Auto Kill oldest background App
+        function triggerANRAndAutoKill(currentApp) {
+            const anrDialog = document.getElementById('anr-dialog');
+            const anrAppName = document.getElementById('anr-app-name');
+
+            anrAppName.textContent = `${currentApp.name} 無回應 (Lag)`;
+            anrDialog.classList.remove('hidden');
+
+            if (openAppsOrder.length > 0) {
+                const killedId = openAppsOrder.shift();
+                backgroundKilledApps.add(killedId);
+
+                const killedApp = BASE_APPS.find(a => a.id === killedId);
+                showToast(`〔${killedApp ? killedApp.name : '背景程式'}〕已在背景關閉，釋放記憶體`);
+            }
+
+            renderAppGrid();
+            updateMetersUI();
+        }
+
+        function dismissANRDialog() {
+            document.getElementById('anr-dialog').classList.add('hidden');
+            minimizeAppWindow();
+        }
+
+        // Show Reloading Sequence
+        function showReloadingSequence(app) {
+            const overlay = document.getElementById('reload-overlay');
+            const icon = document.getElementById('reload-app-icon');
+            const name = document.getElementById('reload-app-name');
+            const progress = document.getElementById('reload-progress');
+
+            icon.className = `fa-solid ${app.icon} text-5xl text-blue-400 mb-4 animate-bounce`;
+            name.textContent = app.name;
+            progress.style.width = '0%';
+            overlay.classList.remove('hidden');
+
+            setTimeout(() => {
+                progress.style.width = '100%';
+            }, 50);
+
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                backgroundKilledApps.delete(app.id);
+                openAppsOrder.push(app.id);
+
+                if (calculateCurrentRamUsage() >= phoneSpecs[currentPhoneModel].maxRamMB) {
+                    triggerANRAndAutoKill(app);
+                } else {
+                    renderAppWindowContent(app, calculateCurrentRamUsage() / phoneSpecs[currentPhoneModel].maxRamMB);
+                }
+
+                renderAppGrid();
+                updateMetersUI();
+            }, 1500);
+        }
+
+        // Update Gauges UI
+        function updateMetersUI() {
+            const specs = phoneSpecs[currentPhoneModel];
+            const usedRamMB = calculateCurrentRamUsage();
+            const ramPercent = Math.min(100, Math.round((usedRamMB / specs.maxRamMB) * 100));
+
+            document.getElementById('ram-text').textContent = `${(usedRamMB / 1024).toFixed(1)} / ${(specs.maxRamMB / 1024).toFixed(1)} GB (${ramPercent}%)`;
+            const ramBar = document.getElementById('ram-bar');
+            ramBar.style.width = `${ramPercent}%`;
+
+            if (ramPercent >= 85) {
+                ramBar.className = 'ram-bar-fill bg-red-500 h-full rounded-full';
+            } else if (ramPercent >= 65) {
+                ramBar.className = 'ram-bar-fill bg-amber-500 h-full rounded-full';
+            } else {
+                ramBar.className = 'ram-bar-fill bg-blue-500 h-full rounded-full';
+            }
+
+            // Storage Meter
+            const storagePercent = Math.min(100, Math.round((currentStorageUsedGB / specs.totalStorageGB) * 100));
+            document.getElementById('storage-text').textContent = `${currentStorageUsedGB.toFixed(1)} / ${specs.totalStorageGB} GB (${storagePercent}%)`;
+            const storageBar = document.getElementById('storage-bar');
+            storageBar.style.width = `${storagePercent}%`;
+
+            if (storagePercent >= 100) {
+                storageBar.className = 'storage-bar-fill bg-red-500 h-full rounded-full';
+            } else {
+                storageBar.className = 'storage-bar-fill bg-orange-500 h-full rounded-full';
+            }
+        }
+
+        function takePhoto() {
+            const maxStorage = phoneSpecs[currentPhoneModel].totalStorageGB;
+            if (currentStorageUsedGB + 2 > maxStorage) {
+                openStorageFullCleanupModal();
+                return;
+            }
+            extraPhotosCount++;
+            currentStorageUsedGB += 2;
+            updateMetersUI();
+            showToast('已拍攝新相片 (+2GB 儲存空間)');
+        }
+
+        function downloadExtraApp() {
+            const maxStorage = phoneSpecs[currentPhoneModel].totalStorageGB;
+            if (currentStorageUsedGB + 4 > maxStorage) {
+                openStorageFullCleanupModal();
+                return;
+            }
+            const appNum = installedDownloadedApps.length + 1;
+            installedDownloadedApps.push(`新下載 App #${appNum}`);
+            currentStorageUsedGB += 4;
+            updateMetersUI();
+            showToast(`已成功下載新 App (+4GB 儲存空間)`);
+        }
+
+        function closeAllApps() {
+            minimizeAppWindow();
+            openAppsOrder = [];
+            backgroundKilledApps.clear();
+            renderAppGrid();
+            updateMetersUI();
+            showToast('已關閉全部 App，RAM 已瞬間清空！');
+        }
+
+        function openStorageFullCleanupModal() {
+            const listContainer = document.getElementById('storage-items-list');
+            listContainer.innerHTML = '';
+            let hasItems = false;
+
+            if (extraPhotosCount > 0) {
+                hasItems = true;
+                const photoItem = document.createElement('div');
+                photoItem.className = 'flex justify-between items-center p-2.5 bg-slate-800 rounded-xl border border-slate-700 text-xs';
+                photoItem.innerHTML = `
+                    <span class="font-medium text-slate-200"><i class="fa-solid fa-images text-blue-400 mr-2"></i>相冊相片集 (${extraPhotosCount} 組)</span>
+                    <button onclick="deletePhotoGroup()" class="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold">刪除 (-2GB)</button>
+                `;
+                listContainer.appendChild(photoItem);
+            }
+
+            installedDownloadedApps.forEach((appName, index) => {
+                hasItems = true;
+                const appItem = document.createElement('div');
+                appItem.className = 'flex justify-between items-center p-2.5 bg-slate-800 rounded-xl border border-slate-700 text-xs';
+                appItem.innerHTML = `
+                    <span class="font-medium text-slate-200"><i class="fa-solid fa-cube text-purple-400 mr-2"></i>${appName}</span>
+                    <button onclick="deleteExtraApp(${index})" class="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold">解除安裝 (-4GB)</button>
+                `;
+                listContainer.appendChild(appItem);
+            });
+
+            if (!hasItems) {
+                listContainer.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">儲存空間不足，請先刪除相片或解除安裝程式</p>';
+            }
+
+            document.getElementById('modal-storage-full').classList.remove('hidden');
+        }
+
+        function deletePhotoGroup() {
+            if (extraPhotosCount > 0) {
+                extraPhotosCount--;
+                currentStorageUsedGB = Math.max(phoneSpecs[currentPhoneModel].baseStorageUsedGB, currentStorageUsedGB - 2);
+                updateMetersUI();
+                closeStorageFullModal();
+                showToast('已刪除相片，釋放了 2GB 儲存空間');
+            }
+        }
+
+        function deleteExtraApp(index) {
+            installedDownloadedApps.splice(index, 1);
+            currentStorageUsedGB = Math.max(phoneSpecs[currentPhoneModel].baseStorageUsedGB, currentStorageUsedGB - 4);
+            updateMetersUI();
+            closeStorageFullModal();
+            showToast('已解除安裝程式，釋放了 4GB 儲存空間');
+        }
+
+        function closeStorageFullModal() {
+            document.getElementById('modal-storage-full').classList.add('hidden');
+        }
+
+        function sendStudentDataToAPI(levelCompleted) {
+            const studentInfo = document.getElementById('student-id').value.trim() || '匿名學生';
+            const payload = {
+                timestamp: new Date().toISOString(),
+                student: studentInfo,
+                level: levelCompleted,
+                answers: {
+                    level1_phoneA: document.getElementById('ans-l1-a').value.trim(),
+                    level1_phoneB: document.getElementById('ans-l1-b').value.trim(),
+                    level2_closeAppsStorageEffect: document.getElementById('ans-l2-a').value.trim(),
+                    level2_releaseStorageMethods: document.getElementById('ans-l2-b').value.trim()
+                }
+            };
+
+            // Local Silent Backup
+            try {
+                localStorage.setItem(`ram_sim_submission_${levelCompleted}`, JSON.stringify(payload));
+            } catch(e){}
+
+            // If teacher endpoint is configured, send HTTP POST silently
+            if (TEACHER_API_ENDPOINT && TEACHER_API_ENDPOINT !== "YOUR_API_ENDPOINT_HERE") {
+                fetch(TEACHER_API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                }).catch(err => {
+                    // Fail silently to avoid interrupting classroom activity
+                    console.log('Submission saved locally.');
+                });
+            }
+        }
+
+        function completeLevel1() {
+            const ansA = document.getElementById('ans-l1-a').value.trim();
+            const ansB = document.getElementById('ans-l1-b').value.trim();
+
+            if (!ansA || !ansB) {
+                alert('請先在右方紀錄欄填寫手機 A 及手機 B 的觀察結果！');
+                return;
+            }
+
+            // Silent submission hook
+            sendStudentDataToAPI(1);
+
+            document.getElementById('modal-l1').classList.remove('hidden');
+        }
+
+        function closeModal1AndUnlockLevel2() {
+            document.getElementById('modal-l1').classList.add('hidden');
+            currentLevel = 2;
+
+            document.getElementById('storage-container').classList.remove('hidden');
+            document.getElementById('level2-controls').classList.remove('hidden');
+            document.getElementById('form-level-2').classList.remove('hidden');
+
+            document.getElementById('btn-complete-l1').classList.add('hidden');
+            document.getElementById('btn-complete-l2').classList.remove('hidden');
+
+            document.getElementById('badge-level-1').className = "px-3 py-1 bg-slate-700 text-slate-400 text-xs font-bold rounded-full border border-slate-600";
+            document.getElementById('badge-level-2').className = "px-3 py-1 bg-orange-500/20 text-orange-300 text-xs font-bold rounded-full border border-orange-500/40";
+
+            document.getElementById('instruction-title').textContent = "關卡二任務：體驗「儲存空間」與「RAM」的分別";
+            document.getElementById('instruction-desc').textContent = "點擊「影相」或「下載 App」填滿儲存空間；點擊「關閉全部 App」觀察儲存空間會否改變，並完成右方紀錄欄。";
+
+            updateMetersUI();
+        }
+
+        function completeLevel2() {
+            const ans2A = document.getElementById('ans-l2-a').value.trim();
+            const ans2B = document.getElementById('ans-l2-b').value.trim();
+
+            if (!ans2A || !ans2B) {
+                alert('請先填寫關卡二的兩道思考問題！');
+                return;
+            }
+
+            // Silent submission hook
+            sendStudentDataToAPI(2);
+
+            document.getElementById('modal-l2').classList.remove('hidden');
+        }
+
+        function showFinalSummaryModal() {
+            document.getElementById('modal-l2').classList.add('hidden');
+            document.getElementById('modal-summary').classList.remove('hidden');
+        }
+
+        function revealQuizAnswer() {
+            document.getElementById('quiz-answer').classList.remove('hidden');
+            document.getElementById('btn-reveal-quiz').classList.add('hidden');
+        }
+
+        function closeSummaryModal() {
+            document.getElementById('modal-summary').classList.add('hidden');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('phone-toast');
+            document.getElementById('toast-message').textContent = msg;
+            toast.classList.remove('hidden');
+
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 2600);
+        }
+    </script>
+</body>
+</html>
